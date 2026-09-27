@@ -18,6 +18,12 @@ const contractMetaCache = new LRUCache({
 // behind a stale null value for up to the full window.
 const NOT_REGISTERED_TTL_MS = 2_000;
 
+export function serializeRawData(data) {
+  return JSON.stringify(data, (_, value) =>
+    typeof value === "bigint" ? value.toString() : value
+  );
+}
+
 /**
  * Decode a raw Soroban RPC event into a human-readable record.
  * Falls back to a generic description when no ABI is registered.
@@ -73,7 +79,7 @@ export async function decode(ev) {
     tx_hash: ev.txHash,
     description,
     raw_topics: topics.map(String),
-    raw_data: JSON.stringify(data, (_, v) => (typeof v === "bigint" ? v.toString() : v)),
+    raw_data: serializeRawData(data),
     event_addresses: eventAddresses,
     ...(isSac && { sac_asset: assetCode }),
   };
