@@ -45,7 +45,7 @@ jobs:
         run: |
           npm ci
           node --input-type=module -e 'import { db } from "./src/db.js"; await db.init(); await db.close();'
-          node --test test/
+          npm test
 
   frontend:
     runs-on: ubuntu-latest

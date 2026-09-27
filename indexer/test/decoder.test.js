@@ -47,11 +47,9 @@ const XLM_SAC_ID = new Contract(
   Asset.native().contractId(Networks.TESTNET)
 ).contractId();
 
-// Unique valid contract IDs (derived from deterministic seeds) — one per test
-// so that the 60-second LRU cache in decoder.js never bleeds between tests.
-const [C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13, C17, C18] = [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18,
-].map((i) => StrKey.encodeContract(Buffer.alloc(32, i)));
+// Unique contract IDs prevent the 60-second metadata cache from leaking across tests.
+const [C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13, C14, C15, C16, C17, C18, C19, C20] =
+  Array.from({ length: 20 }, (_, index) => StrKey.encodeContract(Buffer.alloc(32, index + 1)));
 
 
 // ── mock setup ────────────────────────────────────────────────────────────────
@@ -84,6 +82,26 @@ describe("decode()", () => {
 
     assert.equal(result.function, "myFunc");
     assert.ok(result.description.includes("myFunc"), "description should contain function name");
+  });
+
+  it("does not stringify contract instance and nonce topics as objects", async () => {
+    db.getContractMeta = async () => null;
+    const contractId = StrKey.encodeContract(Buffer.alloc(32, 19));
+    const contractInstance = xdr.ScVal.scvContractInstance(
+      new xdr.ScContractInstance({
+        executable: xdr.ContractExecutable.contractExecutableWasm(Buffer.alloc(32)),
+        storage: [],
+      })
+    );
+    const nonce = xdr.ScVal.scvLedgerKeyNonce(
+      new xdr.ScNonceKey({ nonce: xdr.Int64.fromString("123") })
+    );
+    const result = await decode(
+      makeRawEvent(contractId, "opaque", [xdr.ScVal.scvLedgerKeyContractInstance(), contractInstance, nonce])
+    );
+
+    assert.equal(result.description, "opaque(, , <nonce:123>) called on " + contractId);
+    assert.ok(!result.description.includes("[object Object]"));
   });
 
   it("re-checks a contract registered after an initial negative lookup", async () => {
@@ -180,9 +198,9 @@ describe("decode()", () => {
 
   it("uses buildDescription for 'approve'", async () => {
     db.getContractMeta = async (id) =>
-      id === C13 ? { id: C13, name: "Token", functions: [{ name: "approve" }] } : null;
+      id === C19 ? { id: C19, name: "Token", functions: [{ name: "approve" }] } : null;
 
-    const ev = makeRawEvent(C13, "approve", [scAddress(ADDR_G), scAddress(ADDR_G2)]);
+    const ev = makeRawEvent(C19, "approve", [scAddress(ADDR_G), scAddress(ADDR_G2)]);
 
     const result = await decode(ev);
     assert.equal(result.function, "approve");
@@ -343,9 +361,9 @@ describe("decode()", () => {
 
   it("uses buildDescription for 'transfer_from'", async () => {
     db.getContractMeta = async (id) =>
-      id === C17 ? { id: C17, name: "DexRouter", functions: [{ name: "transfer_from" }] } : null;
+      id === C20 ? { id: C20, name: "DexRouter", functions: [{ name: "transfer_from" }] } : null;
 
-    const ev = makeRawEvent(C17, "transfer_from", [
+    const ev = makeRawEvent(C20, "transfer_from", [
       scAddress(ADDR_G),
       scAddress(ADDR_G2),
       scAddress(ADDR_G),

@@ -6,6 +6,7 @@ import { eventEmitter } from "./events.js";
 /** @typedef {import('./types.js').VolumeResult} VolumeResult */
 
 const DEFAULT_POOL_SIZE = 20;
+const PING_TIMEOUT_MS = 5000;
 
 /**
  * Parse and validate DATABASE_POOL_SIZE environment variable.
@@ -191,7 +192,7 @@ export const db = {
    */
   async ping() {
     try {
-      await pool.query("SELECT 1");
+      await pool.query({ text: "SELECT 1", query_timeout: PING_TIMEOUT_MS });
       return true;
     } catch {
       return false;
@@ -262,9 +263,14 @@ export const db = {
       conditions.push(`function = $${params.length}`);
     }
     if (q) {
-      const escapedQ = escapeLikePattern(q);
-      params.push(`%${escapedQ}%`);
-      conditions.push(`description ILIKE $${params.length} ESCAPE '\\'`);
+      if (/^[\w\s]+$/.test(q)) {
+        params.push(q);
+        conditions.push(`description_tsv @@ plainto_tsquery('english', $${params.length})`);
+      } else {
+        const escapedQ = escapeLikePattern(q);
+        params.push(`%${escapedQ}%`);
+        conditions.push(`description ILIKE $${params.length} ESCAPE '\\'`);
+      }
     }
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const countParams = [...params];

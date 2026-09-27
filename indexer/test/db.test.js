@@ -56,7 +56,11 @@ pg.Pool.prototype.query = async (sql, params) => {
     _queryError = null;
     throw err;
   }
-  _calls.push({ sql, params });
+  _calls.push({
+    sql: typeof sql === "object" ? sql.text : sql,
+    params,
+    query_timeout: typeof sql === "object" ? sql.query_timeout : undefined,
+  });
   if (_nextRow !== null) {
     const row = _nextRow;
     _nextRow = null;
@@ -77,10 +81,18 @@ describe("db.ping()", () => {
   it("returns true when query succeeds", async () => {
     const result = await db.ping();
     assert.equal(result, true);
+    assert.equal(lastCall().sql, "SELECT 1");
+    assert.equal(lastCall().query_timeout, 5000);
   });
 
   it("returns false when query throws", async () => {
     _queryError = new Error("connection refused");
+    const result = await db.ping();
+    assert.equal(result, false);
+  });
+
+  it("returns false when the query times out", async () => {
+    _queryError = new Error("Query read timeout");
     const result = await db.ping();
     assert.equal(result, false);
   });

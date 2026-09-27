@@ -1,7 +1,7 @@
 import { LRUCache } from "lru-cache";
-import { scValToNative } from "@stellar/stellar-sdk"; // only scValToNative is used; xdr and StrKey are intentionally excluded (#30)
 import { db } from "./db.js";
 import { detectSac } from "./sac.js";
+import { scValToJs } from "./scval.js";
 
 /** @typedef {import('./types.js').DecodedEvent} DecodedEvent */
 /** @typedef {import('./types.js').ContractMeta} ContractMeta */
@@ -33,7 +33,7 @@ const NOT_REGISTERED_TTL_MS = 2_000;
 export async function decode(ev) {
   const contractId = ev.contractId;
   const topics = ev.topic.map((t, index) => decodeTopic(t, ev, index));
-  const data = scValToNative(ev.value);
+  const data = scValToJs(ev.value);
 
   // First topic is typically the function name symbol
   const fnName =
@@ -81,7 +81,7 @@ export async function decode(ev) {
 
 function decodeTopic(topic, ev, index) {
   try {
-    return scValToNative(topic);
+    return scValToJs(topic);
   } catch (err) {
     console.warn("Topic decode error:", {
       contractId: ev.contractId,
@@ -142,6 +142,30 @@ function buildDescription(fn, args, data, contractName) {
     case "approve": {
       const [from, spender] = args;
       return `Address ${fmt(from)} approved ${fmt(spender)} to spend on ${contractName}`;
+    }
+    case "supply": {
+      const [from, token, amount] = args;
+      return `Address ${fmt(from)} supplied ${amount} ${token ?? ""} to ${contractName}`;
+    }
+    case "borrow": {
+      const [from, token, amount] = args;
+      return `Address ${fmt(from)} borrowed ${amount} ${token ?? ""} from ${contractName}`;
+    }
+    case "repay": {
+      const [from, token, amount] = args;
+      return `Address ${fmt(from)} repaid ${amount} ${token ?? ""} to ${contractName}`;
+    }
+    case "liquidate": {
+      const [liquidator, borrower, token, amount] = args;
+      return `Address ${fmt(liquidator)} liquidated ${amount} ${token ?? ""} from ${fmt(borrower)} on ${contractName}`;
+    }
+    case "deposit": {
+      const [from, amount, token] = args;
+      return `Address ${fmt(from)} deposited ${amount} ${token ?? ""} into ${contractName}`;
+    }
+    case "withdraw": {
+      const [from, amount, token] = args;
+      return `Address ${fmt(from)} withdrew ${amount} ${token ?? ""} from ${contractName}`;
     }
     case "stake": {
       const [from, amount, token] = args;
