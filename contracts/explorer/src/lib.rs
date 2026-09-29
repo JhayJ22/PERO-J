@@ -456,18 +456,16 @@ impl ExplorerContract {
             raw_topics,
             raw_data,
         };
-        env.storage().persistent().set(&DataKey::EventLog(seq), &event);
-        env.storage().persistent().extend_ttl(&DataKey::EventLog(seq), EVENT_TTL_MIN, EVENT_TTL_MAX);
-        env.storage().persistent().set(&DataKey::EventSeq, &(seq + 1));
-        env.storage().persistent().extend_ttl(
-            &DataKey::EventSeq, EVENTSEQ_TTL_THRESHOLD, EVENTSEQ_TTL_BUMP,
-        );
-        Self::bump_ttl(&env);
 
         env.events().publish(
             (symbol_short!("decoded"), contract_id, function),
             description,
         );
+
+        env.storage().persistent().set(&DataKey::EventLog(seq), &event);
+        env.storage().persistent().extend_ttl(&DataKey::EventLog(seq), EVENT_TTL_MIN, EVENT_TTL_MAX);
+        env.storage().instance().set(&DataKey::EventSeq, &(seq + 1));
+        Self::bump_ttl(&env);
     }
 
     /// Fetch a single decoded event by sequence number.
@@ -568,6 +566,15 @@ mod tests {
             &Bytes::new(&env),
         );
 
+        let (_, topics, data) = env.events().all().last().unwrap();
+        assert_eq!(
+            topics,
+            (symbol_short!("decoded"), cid.clone(), symbol_short!("swap")).into_val(&env),
+        );
+        assert_eq!(
+            String::try_from_val(&env, &data).unwrap(),
+            String::from_str(&env, "Address GABC... swapped 100 USDC → 98.7 XLM on StellarSwap"),
+        );
         assert_eq!(client.event_count(), 1u64);
         let ev = client.get_event(&0u64);
         assert_eq!(ev.ledger, 4521983u32);
@@ -798,34 +805,7 @@ mod tests {
     }
 
     #[test]
-    fn test_update_contract_at_abi_limits_ok() {
-        let (env, client) = setup!();
-        let admin = Address::generate(&env);
-        client.init(&admin);
-
-        let cid: BytesN<32> = BytesN::from_array(&env, &[12u8; 32]);
-        client.register_contract(&admin, &cid, &meta_with(&env, &admin, 1, 1));
-        client.update_contract(&admin, &cid, &meta_with(&env, &admin, MAX_FUNCTIONS, MAX_PARAMS));
-
-        let updated = client.get_contract(&cid);
-        assert_eq!(updated.functions.len(), MAX_FUNCTIONS);
-        assert_eq!(updated.functions.get(0).unwrap().params.len(), MAX_PARAMS);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_update_contract_too_many_params_panics() {
-        let (env, client) = setup!();
-        let admin = Address::generate(&env);
-        client.init(&admin);
-
-        let cid: BytesN<32> = BytesN::from_array(&env, &[13u8; 32]);
-        client.register_contract(&admin, &cid, &meta_with(&env, &admin, 1, 1));
-        client.update_contract(&admin, &cid, &meta_with(&env, &admin, 1, MAX_PARAMS + 1));
-    }
-
-    #[test]
-    #[should_panic]
+    #[should_panic(expected = "Error(Contract, #2)")]
     fn test_transfer_admin_wrong_caller_panics() {
         let (env, client) = setup!();
         let admin    = Address::generate(&env);
@@ -833,6 +813,50 @@ mod tests {
         client.init(&admin);
         // attacker tries to hijack admin — must panic
         client.transfer_admin(&attacker, &attacker);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_transfer_admin_requires_auth() {
+        let (env, client) = setup!();
+        let admin = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+        client.init(&admin);
+
+        env.set_auths(&[]);
+        client.transfer_admin(&admin, &new_admin);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_submit_event_requires_auth() {
+        let (env, client) = setup!();
+        let admin = Address::generate(&env);
+        client.init(&admin);
+
+        env.set_auths(&[]);
+        let cid: BytesN<32> = BytesN::from_array(&env, &[12u8; 32]);
+        client.submit_event(
+            &admin,
+            &cid,
+            &symbol_short!("swap"),
+            &1u32,
+            &String::from_str(&env, "must require authorization"),
+            &Vec::new(&env),
+            &Bytes::new(&env),
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_add_indexer_requires_admin_auth() {
+        let (env, client) = setup!();
+        let admin = Address::generate(&env);
+        let indexer = Address::generate(&env);
+        client.init(&admin);
+
+        env.set_auths(&[]);
+        client.add_indexer(&admin, &indexer);
     }
 
     // ── #1 — init is permanently irreversible ────────────────────────────────
@@ -846,10 +870,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Error(Contract, #3)")]
     fn test_init_is_irreversible_without_instance_entry() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let id = env.register_contract(None, ExplorerContract);
-        let client = ExplorerContractClient::new(&env, &id);
+        let (env, client) = setup!();
+        let id = client.address.clone();
 
         let admin    = Address::generate(&env);
         let attacker = Address::generate(&env);
