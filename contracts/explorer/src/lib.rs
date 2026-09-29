@@ -802,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Error(Contract, #2)")]
     fn test_transfer_admin_wrong_caller_panics() {
         let (env, client) = setup!();
         let admin    = Address::generate(&env);
@@ -810,6 +810,50 @@ mod tests {
         client.init(&admin);
         // attacker tries to hijack admin — must panic
         client.transfer_admin(&attacker, &attacker);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_transfer_admin_requires_auth() {
+        let (env, client) = setup!();
+        let admin = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+        client.init(&admin);
+
+        env.set_auths(&[]);
+        client.transfer_admin(&admin, &new_admin);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_submit_event_requires_auth() {
+        let (env, client) = setup!();
+        let admin = Address::generate(&env);
+        client.init(&admin);
+
+        env.set_auths(&[]);
+        let cid: BytesN<32> = BytesN::from_array(&env, &[12u8; 32]);
+        client.submit_event(
+            &admin,
+            &cid,
+            &symbol_short!("swap"),
+            &1u32,
+            &String::from_str(&env, "must require authorization"),
+            &Vec::new(&env),
+            &Bytes::new(&env),
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_add_indexer_requires_admin_auth() {
+        let (env, client) = setup!();
+        let admin = Address::generate(&env);
+        let indexer = Address::generate(&env);
+        client.init(&admin);
+
+        env.set_auths(&[]);
+        client.add_indexer(&admin, &indexer);
     }
 
     // ── #1 — init is permanently irreversible ────────────────────────────────
@@ -823,10 +867,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Error(Contract, #3)")]
     fn test_init_is_irreversible_without_instance_entry() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let id = env.register_contract(None, ExplorerContract);
-        let client = ExplorerContractClient::new(&env, &id);
+        let (env, client) = setup!();
+        let id = client.address.clone();
 
         let admin    = Address::generate(&env);
         let attacker = Address::generate(&env);
