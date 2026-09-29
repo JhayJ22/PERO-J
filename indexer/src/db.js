@@ -6,6 +6,7 @@ import { eventEmitter } from "./events.js";
 /** @typedef {import('./types.js').VolumeResult} VolumeResult */
 
 const DEFAULT_POOL_SIZE = 20;
+const PING_TIMEOUT_MS = 5000;
 
 /**
  * Parse and validate DATABASE_POOL_SIZE environment variable.
@@ -198,7 +199,7 @@ export const db = {
    */
   async ping() {
     try {
-      await pool.query("SELECT 1");
+      await pool.query({ text: "SELECT 1", query_timeout: PING_TIMEOUT_MS });
       return true;
     } catch {
       return false;

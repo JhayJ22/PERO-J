@@ -2,6 +2,7 @@ import { LRUCache } from "lru-cache";
 import { scValToNative, StrKey } from "@stellar/stellar-sdk";
 import { db } from "./db.js";
 import { detectSac } from "./sac.js";
+import { scValToJs } from "./scval.js";
 
 /** @typedef {import('./types.js').DecodedEvent} DecodedEvent */
 /** @typedef {import('./types.js').ContractMeta} ContractMeta */
@@ -33,7 +34,7 @@ const NOT_REGISTERED_TTL_MS = 2_000;
 export async function decode(ev) {
   const contractId = ev.contractId;
   const topics = ev.topic.map((t, index) => decodeTopic(t, ev, index));
-  const data = scValToNative(ev.value);
+  const data = scValToJs(ev.value);
 
   // First topic is typically the function name symbol
   const fnName =
@@ -81,7 +82,7 @@ export async function decode(ev) {
 
 function decodeTopic(topic, ev, index) {
   try {
-    return scValToNative(topic);
+    return scValToJs(topic);
   } catch (err) {
     console.warn("Topic decode error:", {
       contractId: ev.contractId,
