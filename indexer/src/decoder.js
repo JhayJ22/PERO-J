@@ -1,4 +1,5 @@
 import { LRUCache } from "lru-cache";
+import { scValToNative, StrKey } from "@stellar/stellar-sdk";
 import { db } from "./db.js";
 import { detectSac } from "./sac.js";
 import { scValToJs } from "./scval.js";
@@ -143,22 +144,6 @@ function buildDescription(fn, args, data, contractName) {
       const [from, spender] = args;
       return `Address ${fmt(from)} approved ${fmt(spender)} to spend on ${contractName}`;
     }
-    case "supply": {
-      const [from, token, amount] = args;
-      return `Address ${fmt(from)} supplied ${amount} ${token ?? ""} to ${contractName}`;
-    }
-    case "borrow": {
-      const [from, token, amount] = args;
-      return `Address ${fmt(from)} borrowed ${amount} ${token ?? ""} from ${contractName}`;
-    }
-    case "repay": {
-      const [from, token, amount] = args;
-      return `Address ${fmt(from)} repaid ${amount} ${token ?? ""} to ${contractName}`;
-    }
-    case "liquidate": {
-      const [liquidator, borrower, token, amount] = args;
-      return `Address ${fmt(liquidator)} liquidated ${amount} ${token ?? ""} from ${fmt(borrower)} on ${contractName}`;
-    }
     case "deposit": {
       const [from, amount, token] = args;
       return `Address ${fmt(from)} deposited ${amount} ${token ?? ""} into ${contractName}`;
@@ -175,12 +160,36 @@ function buildDescription(fn, args, data, contractName) {
       const [from, amount, token] = args;
       return `Address ${fmt(from)} unstaked ${amount} ${token ?? ""} on ${contractName}`;
     }
+    case "supply": {
+      const [from, token, amount] = args;
+      return `Address ${fmt(from)} supplied ${amount} ${token ?? ""} into ${contractName}`;
+    }
+    case "borrow": {
+      const [from, token, amount] = args;
+      return `Address ${fmt(from)} borrowed ${amount} ${token ?? ""} from ${contractName}`;
+    }
+    case "repay": {
+      const [from, token, amount] = args;
+      return `Address ${fmt(from)} repaid ${amount} ${token ?? ""} on ${contractName}`;
+    }
+    case "liquidate": {
+      const [borrower, liquidator, token, amount] = args;
+      return `Address ${fmt(liquidator)} liquidated ${fmt(borrower)} for ${amount} ${token ?? ""} on ${contractName}`;
+    }
+    case "deposit": {
+      const [from, amount, token] = args;
+      return `Address ${fmt(from)} deposited ${amount} ${token ?? ""} into ${contractName}`;
+    }
+    case "withdraw": {
+      const [from, amount, token] = args;
+      return `Address ${fmt(from)} withdrew ${amount} ${token ?? ""} from ${contractName}`;
+    }
     default:
       return genericDescription(fn, args, data, contractName);
   }
 }
 
-/** Regex for a valid Stellar public key (G… strkey). */
+/** Regex for the shape of a Stellar public key (G… strkey). */
 const VALID_STRKEY_RE = /^G[A-Z0-9]{55}$/;
 
 /**
@@ -203,15 +212,15 @@ const MAX_ARG_DISPLAY_LEN = 128;
  */
 function isSensitive(s) {
   // 56-char G-prefixed string that is NOT a valid public strkey
-  if (s.length === 56 && s.startsWith("G") && !VALID_STRKEY_RE.test(s)) {
+  if (s.length === 56 && s.startsWith("G") && !StrKey.isValidEd25519PublicKey(s)) {
     return true;
   }
   // Raw hex data: 64+ contiguous hex characters
   if (/^[0-9a-fA-F]{64,}$/.test(s)) {
     return true;
   }
-  // Base64 blob of ≥ 44 chars (covers 32-byte secrets encoded in base64)
-  if (/^[A-Za-z0-9+/]{44,}={0,2}$/.test(s)) {
+  // Base64 blob of ≥ 44 chars, including any trailing padding
+  if (s.length >= 44 && /^[A-Za-z0-9+/]+={0,2}$/.test(s)) {
     return true;
   }
   return false;
@@ -230,7 +239,7 @@ function isSensitive(s) {
  */
 function sanitiseArg(val) {
   const s = String(val);
-  if (VALID_STRKEY_RE.test(s)) {
+  if (StrKey.isValidEd25519PublicKey(s)) {
     return s;
   }
   if (isSensitive(s)) {
@@ -268,7 +277,7 @@ function genericDescription(fn, args, data, contractId) {
 function extractAddresses(values) {
   const found = new Set();
   const walk = (v) => {
-    if (typeof v === "string" && /^G[A-Z0-9]{55}$/.test(v)) {
+    if (typeof v === "string" && VALID_STRKEY_RE.test(v)) {
       found.add(v);
     } else if (Array.isArray(v)) {
       v.forEach(walk);

@@ -119,6 +119,13 @@ const migrations = [
         ON events USING GIN(description_tsv);
     `,
   },
+  {
+    id: 6,
+    name: "ensure_events_sac_asset_column",
+    sql: `
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS sac_asset TEXT;
+    `,
+  },
 ];
 
 process.on("unhandledRejection", async (err) => {
@@ -263,7 +270,13 @@ export const db = {
       conditions.push(`function = $${params.length}`);
     }
     if (q) {
-      if (/^[\w\s]+$/.test(q)) {
+      // Use the GIN-indexed tsvector column for word-only queries (letters,
+      // digits, underscores, and spaces) so PostgreSQL can use the index scan.
+      // Fall back to ILIKE for queries that contain special characters (e.g.
+      // punctuation, operators, glob chars) which plainto_tsquery would strip
+      // or misinterpret.
+      const isWordSafe = /^[\w\s]+$/.test(q);
+      if (isWordSafe) {
         params.push(q);
         conditions.push(`description_tsv @@ plainto_tsquery('english', $${params.length})`);
       } else {
@@ -316,13 +329,13 @@ export const db = {
     const offset = (pageNum - 1) * limitNum;
 
     const countRes = await pool.query(
-      "SELECT COUNT(*) FROM events WHERE COALESCE(event_addresses, ARRAY[]::TEXT[]) @> ARRAY[$1]",
+      "SELECT COUNT(*) FROM events WHERE event_addresses @> ARRAY[$1] AND COALESCE(event_addresses, ARRAY[]::TEXT[]) @> ARRAY[$1]",
       [address]
     );
     const total = parseInt(countRes.rows[0].count, 10);
 
     const { rows } = await pool.query(
-      "SELECT * FROM events WHERE COALESCE(event_addresses, ARRAY[]::TEXT[]) @> ARRAY[$1] ORDER BY ledger DESC LIMIT $2 OFFSET $3",
+      "SELECT * FROM events WHERE event_addresses @> ARRAY[$1] AND COALESCE(event_addresses, ARRAY[]::TEXT[]) @> ARRAY[$1] ORDER BY ledger DESC LIMIT $2 OFFSET $3",
       [address, limitNum, offset]
     );
 
@@ -369,10 +382,19 @@ export const db = {
     const total = parseInt(countRes.rows[0].count, 10);
 
     const offset = (pageNum - 1) * limitNum;
+    // Push LIMIT and OFFSET into the params array so their $N positions are
+    // always params.length (after push) regardless of how many filter params
+    // precede them. This avoids the fragile +1/+2 arithmetic that breaks when
+    // additional WHERE conditions are added.
+    const selectParams = [...params];
+    selectParams.push(limitNum);
+    const limitIdx = selectParams.length; // e.g. 1 when no q, 2 when q present
+    selectParams.push(offset);
+    const offsetIdx = selectParams.length; // limitIdx + 1
     const { rows } = await pool.query(
       `SELECT * FROM contracts ${where}
-       ORDER BY name ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, limitNum, offset]
+       ORDER BY name ASC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      selectParams
     );
     return { contracts: rows, total, page: pageNum, limit: limitNum };
   },
