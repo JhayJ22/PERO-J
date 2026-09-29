@@ -299,6 +299,8 @@ The frontend CI was failing with 'npm ci can only install packages when
 
 - Harden SAC parsing and signed SCVal decoding ([`ee19d80`](../../commit/ee19d806125d9177d51541bcc721dcefb8c56cc5))
 
+- Address indexer issue checks ([`51a9735`](../../commit/51a9735f6018e370f7b8440eebe22e83b0c8f758))
+
 - React keys, search query, and debounce in EventTable and Home ([`b3be6a2`](../../commit/b3be6a2cc8b51288676a183ef53944eafffeea16))
 
 - EventTable.tsx ([#303](../../issues/303)): wrap each event pair in <React.Fragment key={ev.seq}>
@@ -920,6 +922,8 @@ Issue [#118](../../issues/118) — Contract admin key management
 
 
 ### Documentation
+
+- Auto-update CHANGELOG.md [skip ci] ([`7116486`](../../commit/71164862dbfa5047da2ff728a8663fe028223a77))
 
 - Auto-update CHANGELOG.md [skip ci] ([`e846fba`](../../commit/e846fba3a10e00749812ffd3a04abd3ef6e390af))
 
